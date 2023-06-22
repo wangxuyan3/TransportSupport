@@ -3,35 +3,50 @@
 #include <stdio.h>
 #include <string>
 #include <functional>
+#include <iostream>
+#include <fstream>
 
-int TCPTransport::BindOrConnect(transportModel modelType, string localIp, int localPort, string remoteIp, int remotePort) {
+#include "Tools.h"
+
+void TCPTransport::LoadConfig() {
+	ifstream configFile("config.txt");
+
+	if (configFile.is_open()) {
+		// read context
+		string singleLine;
+		while (getline(configFile, singleLine)) {
+			vector<string> singleInfo;
+			StringTools::SplitString(&singleInfo, singleLine, " ");
+
+			auto headerInfo = singleInfo[0];
+			if (headerInfo == "ServerIP") { mTransportParams.serverIP = singleInfo[1]; continue; };
+			if (headerInfo == "ClientIP") { mTransportParams.clientIP = singleInfo[1]; continue; };
+			if (headerInfo == "ServerPort") { mTransportParams.serverPort = stoi(singleInfo[1]); continue; };
+			if (headerInfo == "ClientPort") { mTransportParams.clientPort = stoi(singleInfo[1]); continue; };
+		}
+
+		configFile.close();
+	}
+	else {
+		printf("open config file error");
+	}
+}
+
+int TCPTransport::BindOrConnect(transportModel modelType, string serverIP, int serverPort, string clientIP, int clientPort) {
 	WSADATA wsaData;
 	WSAStartup(MAKEWORD(2, 2), &wsaData);
 
 	//声明sockaddr_in结构体变量，用于构建服务器的IP地址 端口号 地址类型
 	struct sockaddr_in serverAddr;
-
-	/*
-	 置零函数
-	 server_addr:要置零的数据的起始地址
-	 sizeof(server_addr):要置零的数据字节个数
-	 */
 	memset(&serverAddr, 0, sizeof(serverAddr));
 
 	if (modelType == transportModel::SEND_MODEL) {
 		// 入参校验
-		if (localIp == "" || localPort == 0) {
+		if (serverIP == "" || serverPort == 0) {
 			printf("params error\n");
 			return -1;
 		}
 
-		/*
-		 socket函数，失败返回-1
-		 int socket(int domain, int type, int protocol);
-		 第一个参数表示使用的地址类型，AF_INET就是使用IPv4进行通信
-		 第二个参数表示套接字类型： SOCK_STREAM则是TCP通信  SOCK_DGRAM则是UDP通信
-		 第三个参数设置为0
-		 */
 		if ((mSendSocketFd = socket(AF_INET, SOCK_STREAM, 0)) < 0)
 		{
 			perror("socket");
@@ -40,16 +55,11 @@ int TCPTransport::BindOrConnect(transportModel modelType, string localIp, int lo
 
 		//初始化服务器端的套接字，并用htons和htonl将端口和地址转成网络字节序
 		serverAddr.sin_family = AF_INET; //设置的使用地址类型
-		serverAddr.sin_port = htons(localPort); //设置端口号
+		serverAddr.sin_port = htons(serverPort); //设置端口号
 		//  //ip可是是本服务器的ip，也可以用宏INADDR_ANY代替，代表0.0.0.0，表明所有地址
 		//  server_addr.sin_addr.s_addr = htonl(INADDR_ANY);
-		serverAddr.sin_addr.s_addr = inet_addr(localIp.c_str());//设置IP地址
+		serverAddr.sin_addr.s_addr = inet_addr(serverIP.c_str());//设置IP地址
 
-		/*
-		 bind将socket与本机的一个端口绑定,随后就可以在该端口监听服务请求
-		 对于bind，accept之类的函数，里面套接字参数都是需要强制转换成(struct sockaddr *)
-		 bind三个参数：服务器端的套接字的文件描述符，
-		 */
 		if (::bind(mSendSocketFd, (struct sockaddr*)&serverAddr, sizeof(serverAddr)) < 0)
 		{
 			perror("connect error");
@@ -57,34 +67,27 @@ int TCPTransport::BindOrConnect(transportModel modelType, string localIp, int lo
 		}
 	} else if (modelType == transportModel::RECV_MODEL) {
 		// 入参校验
-		if (remoteIp == "" || remotePort == 0) {
+		if (serverIP == "" || serverPort == 0) {
 			printf("params error\n");
 			return -1;
 		}
 
-		/*
-		 socket函数，失败返回-1
-		 int socket(int domain, int type, int protocol);
-		 第一个参数表示使用的地址类型，AF_INET就是使用IPv4进行通信
-		 第二个参数表示套接字类型： SOCK_STREAM则是TCP通信  SOCK_DGRAM则是UDP通信
-		 第三个参数设置为0
-		 */
-		if ((mRecvSocketFd = socket(AF_INET, SOCK_STREAM, 0)) < 0)//调用 socket() 函数创建套接字
+		if ((mDataSocket = socket(AF_INET, SOCK_STREAM, 0)) < 0)//调用 socket() 函数创建套接字
 		{
 			perror("socket");
 			return 1;
 		}
 
 		serverAddr.sin_family = AF_INET;  //设置的使用地址类型
-		serverAddr.sin_port = htons(remotePort); //设置端口号
+		serverAddr.sin_port = htons(serverPort); //设置端口号
 		//指定服务器端的ip，本地测试：10.8.116.226
 		//inet_addr()函数，将点分十进制IP转换成网络字节序IP
-		serverAddr.sin_addr.s_addr = inet_addr(remoteIp.c_str());//设置IP地址
+		serverAddr.sin_addr.s_addr = inet_addr(serverIP.c_str());//设置IP地址
 
 		//建立连接
 		int flag = 10;
 		while (flag) {
-			if (connect(mRecvSocketFd, (struct sockaddr*)&serverAddr, sizeof(serverAddr)) < 0)
+			if (connect(mDataSocket, (struct sockaddr*)&serverAddr, sizeof(serverAddr)) < 0)
 			{
 				perror("connecting...");
 				flag--;
@@ -125,9 +128,9 @@ int TCPTransport::StartListen() {
 	struct sockaddr_in clientAddr;
 	int addrLen = sizeof(clientAddr); //缓冲区的clientAddr的长度
 
-	mClientSocket = accept(mSendSocketFd, (struct sockaddr*)&clientAddr, (socklen_t*)&addrLen);
+	mDataSocket = accept(mSendSocketFd, (struct sockaddr*)&clientAddr, (socklen_t*)&addrLen);
 
-	if (mClientSocket < 0) {
+	if (mDataSocket < 0) {
 		perror("accept");
 		return -1;
 	}
@@ -137,7 +140,7 @@ int TCPTransport::StartListen() {
 
 int TCPTransport::SendData(const char* singleBuffer) {
 	//发送数据
-	send(mClientSocket, singleBuffer, strlen(singleBuffer), 0);
+	send(mDataSocket, singleBuffer, strlen(singleBuffer), 0);
 
 	return 0;
 }
@@ -146,8 +149,9 @@ int TCPTransport::RecvData() {
 	char* recvBufferPtr = new char[1024]; //接收缓冲区
 	long singleLength;
 
+	// TODO 准备处理TCP粘包
 	while (mRunFlag) {
-		singleLength = recv(mRecvSocketFd, recvBufferPtr, 1024, 0); //接收数据
+		singleLength = recv(mDataSocket, recvBufferPtr, 1024, 0); //接收数据
 		if (singleLength <= 0) {
 			Sleep(1);
 			continue;

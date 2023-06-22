@@ -12,11 +12,14 @@ using namespace std;
 typedef void(*recvDataBack)(char*, int);
 
 struct transportParams {
-	string localIp;
-	string remoteIp;
+	string serverIP;
+	string clientIP;
 
-	int localPort{ 0 };
-	int remotePort{ 0 };
+	uint32_t serverPort{ 0 };
+	uint32_t clientPort{ 0 };
+
+	uint32_t sendBitRate{ 0 };
+	uint32_t sendFrameRate{ 0 };
 };
 
 struct transportAttrParams {
@@ -30,7 +33,8 @@ enum class transportModel {
 
 class TransportSupport {
 public:
-	virtual int Init(transportParams params, transportModel modelType);
+	virtual void LoadConfig() = 0;
+	virtual int Init(transportModel modelType);
 	virtual int SendData(const char* singleBuffer) = 0;
 	virtual int RecvData() = 0;
 	virtual int RunRecvDataThread() = 0;
@@ -40,15 +44,16 @@ protected:
 	TransportSupport();
 	virtual ~TransportSupport();
 
-	virtual int BindOrConnect(transportModel modelType, string localIp, int localPort, string remoteIp, int remotePort) = 0;
+	virtual int BindOrConnect(transportModel modelType, string serverIP, int serverPort, string clientIP, int clientPort) = 0;
 	virtual int SetAttrParams(); // 模板类中根据参数设置是否阻塞模式
 	virtual int StartListen() = 0;
 
 	int mSendSocketFd{ -1 };
-	int mRecvSocketFd{ -1 };
-	int mClientSocket{ -1 };
+	int mDataSocket{ -1 };
+
 	bool mBlockFlag{ true };
 	bool mRunFlag{ false };
 	recvDataBack mRecvDataCallback = nullptr;
 	thread* recvDataThread = nullptr;
+	transportParams mTransportParams;
 };

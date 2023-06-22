@@ -7,12 +7,11 @@ project ("TransportSupport")
 
 include_directories (./ ./SocketTransport)
 
+# 将源代码添加到此项目的可执行文件。
+add_executable (TransportSupport "main.cpp")
+
 # Add block directories
 add_subdirectory(SocketTransport) #添加SocketTransport文件夹中的SocketTransport库, 注意库名和文件夹名相同
-
-
-# 将源代码添加到此项目的可执行文件。
-add_executable (TransportSupport "main.cpp" )
 
 if(WIN32)
   target_link_libraries(TransportSupport wsock32 ws2_32 SocketTransport)

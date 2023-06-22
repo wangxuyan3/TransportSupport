@@ -1,0 +1,7 @@
+ServerIP 127.0.0.1
+ServerPort 13000
+ClientIP 127.0.0.1
+ClientPort 14000
+
+SendBitRate 1000
+SendFrameRate 30
