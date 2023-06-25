@@ -35,7 +35,7 @@ class TransportSupport {
 public:
 	virtual void LoadConfig() = 0;
 	virtual int Init(transportModel modelType);
-	virtual int SendData(const char* singleBuffer) = 0;
+	virtual int SendData(const char* singleBuffer, uint32_t length) = 0;
 	virtual int RecvData() = 0;
 	virtual int RunRecvDataThread() = 0;
 	int SetRecvDataCallback(recvDataBack callback);

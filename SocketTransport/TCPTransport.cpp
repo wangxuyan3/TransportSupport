@@ -138,26 +138,39 @@ int TCPTransport::StartListen() {
 	return 0;
 }
 
-int TCPTransport::SendData(const char* singleBuffer) {
+int TCPTransport::SendData(const char* singleBuffer, uint32_t length) {
 	//发送数据
-	send(mDataSocket, singleBuffer, strlen(singleBuffer), 0);
-
+	string lengthStr = to_string(length);
+	send(mDataSocket, lengthStr.c_str(), 8, 0);
+	send(mDataSocket, singleBuffer, length, 0);
 	return 0;
 }
 
 int TCPTransport::RecvData() {
-	char* recvBufferPtr = new char[1024]; //接收缓冲区
-	long singleLength;
-
 	// TODO 准备处理TCP粘包
 	while (mRunFlag) {
-		singleLength = recv(mDataSocket, recvBufferPtr, 1024, 0); //接收数据
-		if (singleLength <= 0) {
+		// 接收长度信息
+		int32_t lengthInfoLength = 0;
+		memset(m_lengthInfoBufferPtr, 0, 8);
+		while (lengthInfoLength <= 0) {
+			lengthInfoLength = recv(mDataSocket, m_lengthInfoBufferPtr, 8, 0);
 			Sleep(1);
 			continue;
 		}
+		uint32_t dataTotalLength = strtoul(m_lengthInfoBufferPtr, nullptr, 10);
 
-		mRecvDataCallback(recvBufferPtr, singleLength);
+		uint32_t recvLength = 0;
+		int32_t dataLength = 0;
+		while (dataTotalLength - recvLength) {
+			dataLength = recv(mDataSocket, m_recvBufferPtr + recvLength, 8 * 1024 * 1024, 0); //接收数据
+			if (dataLength <= 0) {
+				Sleep(1);
+				continue;
+			}
+			recvLength += dataLength;
+		}
+
+		mRecvDataCallback(m_recvBufferPtr, dataTotalLength);
 	}
 
 	return 0;
