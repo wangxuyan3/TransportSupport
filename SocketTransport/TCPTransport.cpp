@@ -8,7 +8,15 @@
 
 #include "Tools.h"
 
-void TCPTransport::LoadConfig() {
+TCPTransport::~TCPTransport() {
+//	mRunFlag = false;
+//
+//	if (mRecvDataThread->joinable()) {
+//		mRecvDataThread->join();
+//	}
+}
+
+void TCPTransport::LoadConfigFromFile() {
 	ifstream configFile("config.txt");
 
 	if (configFile.is_open()) {
@@ -32,17 +40,25 @@ void TCPTransport::LoadConfig() {
 	}
 }
 
-int TCPTransport::BindOrConnect(transportModel modelType, string serverIP, int serverPort, string clientIP, int clientPort) {
+void TCPTransport::LoadConfig(string serverIP, uint32_t serverPort, string clientIP, uint32_t clientPort) {
+	mTransportParams.serverIP = serverIP;
+	mTransportParams.clientIP = clientIP;
+	mTransportParams.serverPort = serverPort;
+	mTransportParams.clientPort = clientPort;
+}
+
+int TCPTransport::BindOrConnect(transportModel modelType) {
+#if !(defined(__ANDROID__) || defined(ANDROID))
 	WSADATA wsaData;
 	WSAStartup(MAKEWORD(2, 2), &wsaData);
-
+#endif
 	//声明sockaddr_in结构体变量，用于构建服务器的IP地址 端口号 地址类型
 	struct sockaddr_in serverAddr;
 	memset(&serverAddr, 0, sizeof(serverAddr));
 
 	if (modelType == transportModel::SEND_MODEL) {
 		// 入参校验
-		if (serverIP == "" || serverPort == 0) {
+		if (mTransportParams.serverIP.empty() || mTransportParams.serverPort == 0) {
 			printf("params error\n");
 			return -1;
 		}
@@ -55,10 +71,10 @@ int TCPTransport::BindOrConnect(transportModel modelType, string serverIP, int s
 
 		//初始化服务器端的套接字，并用htons和htonl将端口和地址转成网络字节序
 		serverAddr.sin_family = AF_INET; //设置的使用地址类型
-		serverAddr.sin_port = htons(serverPort); //设置端口号
+		serverAddr.sin_port = htons(mTransportParams.serverPort); //设置端口号
 		//  //ip可是是本服务器的ip，也可以用宏INADDR_ANY代替，代表0.0.0.0，表明所有地址
 		//  server_addr.sin_addr.s_addr = htonl(INADDR_ANY);
-		serverAddr.sin_addr.s_addr = inet_addr(serverIP.c_str());//设置IP地址
+		serverAddr.sin_addr.s_addr = inet_addr(mTransportParams.serverIP.c_str());//设置IP地址
 
 		if (::bind(mSendSocketFd, (struct sockaddr*)&serverAddr, sizeof(serverAddr)) < 0)
 		{
@@ -67,7 +83,7 @@ int TCPTransport::BindOrConnect(transportModel modelType, string serverIP, int s
 		}
 	} else if (modelType == transportModel::RECV_MODEL) {
 		// 入参校验
-		if (serverIP == "" || serverPort == 0) {
+		if (mTransportParams.serverIP == "" || mTransportParams.serverPort == 0) {
 			printf("params error\n");
 			return -1;
 		}
@@ -79,10 +95,10 @@ int TCPTransport::BindOrConnect(transportModel modelType, string serverIP, int s
 		}
 
 		serverAddr.sin_family = AF_INET;  //设置的使用地址类型
-		serverAddr.sin_port = htons(serverPort); //设置端口号
+		serverAddr.sin_port = htons(mTransportParams.serverPort); //设置端口号
 		//指定服务器端的ip，本地测试：10.8.116.226
 		//inet_addr()函数，将点分十进制IP转换成网络字节序IP
-		serverAddr.sin_addr.s_addr = inet_addr(serverIP.c_str());//设置IP地址
+		serverAddr.sin_addr.s_addr = inet_addr(mTransportParams.serverIP.c_str());//设置IP地址
 
 		//建立连接
 		int flag = 10;
@@ -91,7 +107,7 @@ int TCPTransport::BindOrConnect(transportModel modelType, string serverIP, int s
 			{
 				perror("connecting...");
 				flag--;
-				Sleep(1000);
+				std::this_thread::sleep_for(std::chrono::milliseconds(1000));
 				continue;
 			}
 			else {
@@ -110,6 +126,8 @@ int TCPTransport::BindOrConnect(transportModel modelType, string serverIP, int s
 	{
 		return -1;
 	}
+
+	return 0;
 }
 
 int TCPTransport::StartListen() {
@@ -150,34 +168,42 @@ int TCPTransport::RecvData() {
 	// TODO 准备处理TCP粘包
 	while (mRunFlag) {
 		// 接收长度信息
-		int32_t lengthInfoLength = 0;
+		uint32_t lengthInfoTotalLength = 8;
+		uint32_t recvLengthInfoLength = 0;
+		int32_t singleLengthInfoLength = 0;
 		memset(m_lengthInfoBufferPtr, 0, 8);
-		while (lengthInfoLength <= 0) {
-			lengthInfoLength = recv(mDataSocket, m_lengthInfoBufferPtr, 8, 0);
-			Sleep(1);
-			continue;
+		while (mRunFlag && (lengthInfoTotalLength - recvLengthInfoLength) != 0) {
+
+			singleLengthInfoLength = recv(mDataSocket, m_lengthInfoBufferPtr + recvLengthInfoLength, lengthInfoTotalLength - recvLengthInfoLength, 0);
+			if (singleLengthInfoLength <= 0) {
+				std::this_thread::sleep_for(std::chrono::milliseconds(1));
+				continue;
+			}
+			recvLengthInfoLength += singleLengthInfoLength;
 		}
 		uint32_t dataTotalLength = strtoul(m_lengthInfoBufferPtr, nullptr, 10);
 
-		uint32_t recvLength = 0;
-		int32_t dataLength = 0;
-		while (dataTotalLength - recvLength) {
-			dataLength = recv(mDataSocket, m_recvBufferPtr + recvLength, 8 * 1024 * 1024, 0); //接收数据
-			if (dataLength <= 0) {
-				Sleep(1);
+		uint32_t recvDataLength = 0;
+		int32_t singleDataLength = 0;
+		while (mRunFlag && (dataTotalLength - recvDataLength) != 0) {
+			singleDataLength = recv(mDataSocket, m_recvBufferPtr + recvDataLength, dataTotalLength - recvDataLength, 0); //接收数据
+			if (singleDataLength <= 0) {
+				std::this_thread::sleep_for(std::chrono::milliseconds(1));
 				continue;
 			}
-			recvLength += dataLength;
+			recvDataLength += singleDataLength;
 		}
 
-		mRecvDataCallback(m_recvBufferPtr, dataTotalLength);
+		if (mRunFlag) {
+			mRecvDataCallback(m_recvBufferPtr, dataTotalLength);
+		}
 	}
 
 	return 0;
 }
 
 int TCPTransport::RunRecvDataThread() {
-	recvDataThread = new thread(std::bind(&TCPTransport::RecvData, this));
+	mRecvDataThread = new thread(std::bind(&TCPTransport::RecvData, this));
 
 	return 0;
 }

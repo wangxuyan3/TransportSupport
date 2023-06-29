@@ -1,9 +1,18 @@
 #pragma once
+#if defined(__ANDROID__) || defined(ANDROID)
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <sys/ioctl.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <unistd.h>
+#include <netdb.h>
+#else
 #include <ws2tcpip.h>
 #include <winsock.h>
 //#include <winsock2.h>
 #pragma comment(lib,"ws2_32.lib")
-
+#endif
 #include <string>
 #include <thread>
 
@@ -33,7 +42,8 @@ enum class transportModel {
 
 class TransportSupport {
 public:
-	virtual void LoadConfig() = 0;
+	virtual void LoadConfigFromFile() = 0;
+	virtual void LoadConfig(string serverIP, uint32_t serverPort, string clientIP, uint32_t clientPort) = 0;
 	virtual int Init(transportModel modelType);
 	virtual int SendData(const char* singleBuffer, uint32_t length) = 0;
 	virtual int RecvData() = 0;
@@ -44,7 +54,7 @@ protected:
 	TransportSupport();
 	virtual ~TransportSupport();
 
-	virtual int BindOrConnect(transportModel modelType, string serverIP, int serverPort, string clientIP, int clientPort) = 0;
+	virtual int BindOrConnect(transportModel modelType) = 0;
 	virtual int SetAttrParams(); // 模板类中根据参数设置是否阻塞模式
 	virtual int StartListen() = 0;
 
@@ -54,6 +64,6 @@ protected:
 	bool mBlockFlag{ true };
 	bool mRunFlag{ false };
 	recvDataBack mRecvDataCallback = nullptr;
-	thread* recvDataThread = nullptr;
+	thread* mRecvDataThread = nullptr;
 	transportParams mTransportParams;
 };

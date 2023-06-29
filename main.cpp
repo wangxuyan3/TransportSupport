@@ -18,12 +18,15 @@ struct sendParams {
 } g_sendParams;
 
 // 控制启动server或client端
-#define USE_AS_SERVER false
+bool g_serverTag = true;
+bool g_runFlag = true;
 TransportSupport* TCPTransportService = nullptr;
+thread* g_TCPServiceThread = nullptr;
+thread* g_sendThread = nullptr;
 
 void LoadConfig();
 void OnReceiveData(char* Buffer, int singleLength);
-void SendDataThread(TransportSupport* transportPtr);
+void SendDataThread();
 
 void StartTCPTransportService();
 void StopTCPTransportService();
@@ -31,10 +34,12 @@ void StopTCPTransportService();
 
 int main() {
 	LoadConfig();
-	StartTCPTransportService();
+	g_TCPServiceThread = new thread(StartTCPTransportService);
+	g_sendThread = new thread(SendDataThread);
 
-	thread* sendThread = new thread(SendDataThread, TCPTransportService);
-	sendThread->join();
+	if (g_sendThread->joinable()) {
+		g_sendThread->join();
+	}
 
 	StopTCPTransportService();
 	getchar();
@@ -68,18 +73,17 @@ void LoadConfig() {
 	g_sendParams.sendBytePerFrame = g_sendParams.sendBitRate * 1000 / 8 / g_sendParams.sendFrameRate;
 }
 
+// 传输模块
 void StartTCPTransportService() {
 	TCPTransportService = new TCPTransport();
-	TCPTransportService->LoadConfig();
-
+	TCPTransportService->LoadConfigFromFile();
 	TCPTransportService->SetRecvDataCallback(OnReceiveData);
-
-#if USE_AS_SERVER
-	TCPTransportService->Init(transportModel::SEND_MODEL);
-#else
-	TCPTransportService->Init(transportModel::RECV_MODEL);
-#endif
-
+	if (g_serverTag) {
+		TCPTransportService->Init(transportModel::SEND_MODEL);
+	}
+	else {
+		TCPTransportService->Init(transportModel::RECV_MODEL);
+	}
 	TCPTransportService->RunRecvDataThread();
 }
 
@@ -91,18 +95,19 @@ void StopTCPTransportService() {
 
 void OnReceiveData(char* Buffer, int singleLength) {
 	printf("length:%d\n", singleLength);
-	return;
 }
 
-void SendDataThread(TransportSupport* transportPtr) {
-	// TODO 待完成从配置文件读取码率及帧率控制发送
+void SendDataThread() {
+	if (g_TCPServiceThread->joinable()) {
+		g_TCPServiceThread->join();
+	}
 	// 准备数据并发送
 	char* sendData = new char[g_sendParams.sendBytePerFrame];
 	memset(sendData, 0, g_sendParams.sendBytePerFrame);
-	int flag = 10;
-	while (flag) {
-		transportPtr->SendData(sendData, g_sendParams.sendBytePerFrame);
-		flag--;
-		Sleep(g_sendParams.sendSleepTime);
+	//    int flag = 10;
+	while (g_runFlag) {
+		TCPTransportService->SendData(sendData, g_sendParams.sendBytePerFrame);
+		//        flag--;
+		std::this_thread::sleep_for(std::chrono::milliseconds(g_sendParams.sendSleepTime));
 	}
 }
