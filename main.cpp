@@ -1,6 +1,5 @@
 ﻿// TransportSupportCmake.cpp: 定义应用程序的入口点。
 //
-#pragma once
 #include <iostream>
 #include <fstream>
 
@@ -94,7 +93,13 @@ void StopTCPTransportService() {
 }
 
 void OnReceiveData(char* Buffer, int singleLength) {
-	printf("length:%d\n", singleLength);
+    static uint32_t recvIndex = 0;
+
+    if (recvIndex % g_sendParams.sendFrameRate == 0) {
+        printf("Receive Index: %u, length:%d\n", recvIndex, singleLength);
+    }
+
+    ++recvIndex;
 }
 
 void SendDataThread() {

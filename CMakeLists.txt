@@ -13,9 +13,7 @@ add_executable (TransportSupport "main.cpp")
 # Add block directories
 add_subdirectory(SocketTransport) #添加SocketTransport文件夹中的SocketTransport库, 注意库名和文件夹名相同
 
-if(WIN32)
-  target_link_libraries(TransportSupport wsock32 ws2_32 SocketTransport)
-endif()
+target_link_libraries(${PROJECT_NAME} SocketTransport)
 
 if (CMAKE_VERSION VERSION_GREATER 3.12)
   set_property(TARGET TransportSupport PROPERTY CXX_STANDARD 20)

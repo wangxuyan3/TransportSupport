@@ -9,8 +9,8 @@
 #include <netdb.h>
 #else
 #include <ws2tcpip.h>
-#include <winsock.h>
-//#include <winsock2.h>
+//#include <winsock.h>
+#include <winsock2.h>
 #pragma comment(lib,"ws2_32.lib")
 #endif
 #include <string>

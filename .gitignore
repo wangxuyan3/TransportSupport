@@ -12,3 +12,5 @@ _deps
 out
 DebugTest
 .vs
+cmake-build*
+.idea
